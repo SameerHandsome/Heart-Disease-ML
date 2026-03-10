@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   repository_dispatch:
-    types: [model-updated] # fired by Workflow B after Kaggle retrain completes
+    types: [model-updated]
   workflow_dispatch:
 
 jobs:
@@ -25,12 +25,14 @@ jobs:
               - 'monitor/**'
               - 'requirements.txt'
               - 'Dockerfile'
+              - '.github/workflows/**'
 
   test:
     needs: detect-changes
     if: |
       needs.detect-changes.outputs.code_changed == 'true'
       || github.event_name == 'repository_dispatch'
+      || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,21 +59,31 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      # Convert owner to lowercase — ghcr.io requires all lowercase image names
+      - name: Set lowercase image name
+        id: image
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_TAG=ghcr.io/${OWNER}/heart-disease-api" >> $GITHUB_ENV
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: docker/setup-buildx-action@v3
+
       - uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/heart-disease-api:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/heart-disease-api:latest
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/heart-disease-api:buildcache
-          cache-to:   type=registry,ref=ghcr.io/${{ github.repository_owner }}/heart-disease-api:buildcache,mode=max
+            ${{ env.IMAGE_TAG }}:${{ github.sha }}
+            ${{ env.IMAGE_TAG }}:latest
+          cache-from: type=registry,ref=${{ env.IMAGE_TAG }}:buildcache
+          cache-to:   type=registry,ref=${{ env.IMAGE_TAG }}:buildcache,mode=max
 
   deploy:
     needs: build
@@ -79,13 +91,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-kubectl@v3
+
+      - name: Set lowercase image name
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_TAG=ghcr.io/${OWNER}/heart-disease-api" >> $GITHUB_ENV
+
       - name: Configure kubectl
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
+
       - name: Rolling update
         run: |
           kubectl set image deployment/heart-disease-api \
-            heart-disease-api=ghcr.io/${{ github.repository_owner }}/heart-disease-api:${{ github.sha }}
+            heart-disease-api=${{ env.IMAGE_TAG }}:${{ github.sha }}
+
       - name: Wait for rollout
         run: kubectl rollout status deployment/heart-disease-api --timeout=300s
