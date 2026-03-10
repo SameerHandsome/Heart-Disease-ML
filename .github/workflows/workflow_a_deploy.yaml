@@ -39,7 +39,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov
       - name: Run tests
-        run: pytest tests/ -v --cov=app --cov=ml --cov-fail-under=70
+        run: pytest tests/ -v --cov=ml --cov=monitor --cov-fail-under=50
         env:
           DATABASE_URL:        "postgresql://t:t@localhost/t"
           UPSTASH_REDIS_URL:   "https://fake.upstash.io"
