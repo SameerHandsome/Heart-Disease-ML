@@ -3,8 +3,10 @@ name: "Workflow A — Deploy"
 on:
   push:
     branches: [main]
+
   repository_dispatch:
     types: [model-updated]
+
   workflow_dispatch:
 
 jobs:
@@ -13,8 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code_changed: ${{ steps.filter.outputs.code }}
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -29,38 +33,46 @@ jobs:
 
   test:
     needs: detect-changes
+
     if: |
-      needs.detect-changes.outputs.code_changed == 'true'
-      || github.event_name == 'repository_dispatch'
-      || github.event_name == 'workflow_dispatch'
+      needs.detect-changes.outputs.code_changed == 'true' ||
+      github.event_name == 'repository_dispatch' ||
+      github.event_name == 'workflow_dispatch'
+
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
+
       - run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov
+
       - name: Run tests
         run: pytest tests/ -v --cov=ml --cov=monitor --cov-fail-under=40
         env:
-          DATABASE_URL:        "postgresql://t:t@localhost/t"
-          UPSTASH_REDIS_URL:   "https://fake.upstash.io"
+          DATABASE_URL: "postgresql://t:t@localhost/t"
+          UPSTASH_REDIS_URL: "https://fake.upstash.io"
           UPSTASH_REDIS_TOKEN: "fake"
-          HF_TOKEN:            "fake"
-          HF_REPO_ID:          "fake/fake"
-          WANDB_API_KEY:       "fake"
+          HF_TOKEN: "fake"
+          HF_REPO_ID: "fake/fake"
+          WANDB_API_KEY: "fake"
 
   build:
     needs: test
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       packages: write
+
     steps:
       - uses: actions/checkout@v4
 
-      # Convert owner to lowercase — ghcr.io requires all lowercase image names
+      # Convert owner to lowercase — ghcr.io requires lowercase image names
       - name: Set lowercase image name
         id: image
         run: |
@@ -83,11 +95,12 @@ jobs:
             ${{ env.IMAGE_TAG }}:${{ github.sha }}
             ${{ env.IMAGE_TAG }}:latest
           cache-from: type=registry,ref=${{ env.IMAGE_TAG }}:buildcache
-          cache-to:   type=registry,ref=${{ env.IMAGE_TAG }}:buildcache,mode=max
+          cache-to: type=registry,ref=${{ env.IMAGE_TAG }}:buildcache,mode=max
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -124,4 +137,5 @@ jobs:
 
       - name: Wait for rollout
         if: ${{ secrets.KUBECONFIG != '' }}
-        run: kubectl rollout status deployment/heart-disease-api --timeout=300s
+        run: |
+          kubectl rollout status deployment/heart-disease-api --timeout=300s
