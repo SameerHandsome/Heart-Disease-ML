@@ -88,33 +88,40 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    env:
-      HAS_KUBECONFIG: ${{ secrets.KUBECONFIG != '' }}
     steps:
-      - name: Check if cluster is configured
-        if: env.HAS_KUBECONFIG != 'true'
-        run: |
-          echo "No KUBECONFIG secret found — skipping deploy."
-          echo "Add KUBECONFIG secret to GitHub when you have a cluster."
-          exit 0
-
       - uses: actions/checkout@v4
-      - uses: azure/setup-kubectl@v3
 
       - name: Set lowercase image name
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "IMAGE_TAG=ghcr.io/${OWNER}/heart-disease-api" >> $GITHUB_ENV
 
+      - name: Skip if no cluster configured
+        run: |
+          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
+            echo "========================================"
+            echo "No KUBECONFIG secret found."
+            echo "Skipping deployment — no cluster yet."
+            echo "To enable: add KUBECONFIG secret to"
+            echo "GitHub → Settings → Secrets → Actions"
+            echo "========================================"
+            exit 0
+          fi
+
+      - uses: azure/setup-kubectl@v3
+
       - name: Configure kubectl
+        if: ${{ secrets.KUBECONFIG != '' }}
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
 
       - name: Rolling update
+        if: ${{ secrets.KUBECONFIG != '' }}
         run: |
           kubectl set image deployment/heart-disease-api \
             heart-disease-api=${{ env.IMAGE_TAG }}:${{ github.sha }}
 
       - name: Wait for rollout
+        if: ${{ secrets.KUBECONFIG != '' }}
         run: kubectl rollout status deployment/heart-disease-api --timeout=300s
