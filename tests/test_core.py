@@ -243,11 +243,11 @@ class TestDrift:
 
     def test_psi_gate_stable(self):
         from monitor.drift_monitor import run_psi_gate
-        data = np.random.normal(246, 40, 300)
-        ref  = pd.DataFrame({"Cholesterol": data})
-        prod = pd.DataFrame({"Cholesterol": np.random.normal(246, 40, 100)})
-        fired, _ = run_psi_gate(ref, prod)
-        assert not fired
+        rng  = np.random.default_rng(42)
+        ref  = pd.DataFrame({"Cholesterol": rng.normal(246, 40, 300)})
+        prod = pd.DataFrame({"Cholesterol": rng.normal(246, 40, 100)})
+        fired, psi = run_psi_gate(ref, prod)
+        assert not fired, f"PSI {psi:.4f} should be stable but gate fired"
 
     def test_psi_gate_drifted(self):
         from monitor.drift_monitor import run_psi_gate
