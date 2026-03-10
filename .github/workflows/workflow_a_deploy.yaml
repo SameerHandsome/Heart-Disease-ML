@@ -88,7 +88,16 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    env:
+      HAS_KUBECONFIG: ${{ secrets.KUBECONFIG != '' }}
     steps:
+      - name: Check if cluster is configured
+        if: env.HAS_KUBECONFIG != 'true'
+        run: |
+          echo "No KUBECONFIG secret found — skipping deploy."
+          echo "Add KUBECONFIG secret to GitHub when you have a cluster."
+          exit 0
+
       - uses: actions/checkout@v4
       - uses: azure/setup-kubectl@v3
 
