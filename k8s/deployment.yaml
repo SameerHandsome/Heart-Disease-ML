@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heart-disease-api
+  labels:
+    app: heart-disease-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: heart-disease-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0    # never kill old pod until new one is ready
+      maxSurge: 1          # spin new pod first, then remove old
+  template:
+    metadata:
+      labels:
+        app: heart-disease-api
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: heart-disease-api
+          image: heart-disease-api:latest   # for local K8s
+          imagePullPolicy: Never            # use local image, not registry
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: heartdisease-secrets
+          resources:
+            requests:
+              memory: "640Mi"
+              cpu: "250m"
+            limits:
+              memory: "1.8Gi"   # headroom for LGB+CAT+XGB joblib load
+              cpu: "1000m"
+          # Gives model 100s to download from HF + deserialise
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: 8000
+            failureThreshold: 20
+            periodSeconds: 5
+          # Restarts pod if process hangs
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            periodSeconds: 15
+            failureThreshold: 3
+          # Runs real dummy inference — K8s won't route traffic until this passes
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: heart-disease-api-svc
+spec:
+  selector:
+    app: heart-disease-api
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+  type: ClusterIP

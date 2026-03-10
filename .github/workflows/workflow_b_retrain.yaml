@@ -1,0 +1,94 @@
+name: "Workflow B — Retrain"
+
+# Runs drift check on schedule.
+# If drift detected → calls ml/train.py which triggers your Kaggle notebook.
+# Kaggle trains LGB+CAT+XGB, uploads to HuggingFace.
+# Then dispatches model-updated event → Workflow A redeploys.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6h — quick pre-check
+    - cron: "0 8   * * *"   # daily 8am UTC — full check
+  workflow_dispatch:
+    inputs:
+      force_retrain:
+        description: "Skip drift check and trigger Kaggle retrain immediately"
+        type: boolean
+        default: false
+      batch_size:
+        description: "Rows to check for drift (min 50)"
+        type: number
+        default: 200
+
+jobs:
+
+  drift-check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_retrain: ${{ steps.check.outputs.should_retrain }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Run drift monitor
+        id: check
+        env:
+          DATABASE_URL:        ${{ secrets.DATABASE_URL }}
+          UPSTASH_REDIS_URL:   ${{ secrets.UPSTASH_REDIS_URL }}
+          UPSTASH_REDIS_TOKEN: ${{ secrets.UPSTASH_REDIS_TOKEN }}
+          HF_TOKEN:            ${{ secrets.HF_TOKEN }}
+          HF_REPO_ID:          ${{ secrets.HF_REPO_ID }}
+          WANDB_API_KEY:       ${{ secrets.WANDB_API_KEY }}
+        run: |
+          if [ "${{ github.event.inputs.force_retrain }}" = "true" ]; then
+            echo "should_retrain=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          BATCH="${{ github.event.inputs.batch_size || '200' }}"
+          set +e
+          python monitor/drift_monitor.py "$BATCH"
+          CODE=$?
+          set -e
+          if [ "$CODE" -eq 2 ]; then
+            echo "should_retrain=true"  >> $GITHUB_OUTPUT
+          else
+            echo "should_retrain=false" >> $GITHUB_OUTPUT
+          fi
+
+  trigger-kaggle-retrain:
+    needs: drift-check
+    if: needs.drift-check.outputs.should_retrain == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install kaggle
+
+      - name: Trigger Kaggle notebook retrain
+        env:
+          KAGGLE_USERNAME:     ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY:          ${{ secrets.KAGGLE_KEY }}
+          DATABASE_URL:        ${{ secrets.DATABASE_URL }}
+          UPSTASH_REDIS_URL:   ${{ secrets.UPSTASH_REDIS_URL }}
+          UPSTASH_REDIS_TOKEN: ${{ secrets.UPSTASH_REDIS_TOKEN }}
+          HF_TOKEN:            ${{ secrets.HF_TOKEN }}
+          HF_REPO_ID:          ${{ secrets.HF_REPO_ID }}
+          WANDB_API_KEY:       ${{ secrets.WANDB_API_KEY }}
+        run: python ml/train.py
+        # ml/train.py triggers your Kaggle notebook via Kaggle API
+        # The notebook trains and uploads to HuggingFace automatically
+        # After upload, the notebook dispatches the model-updated event below
+
+      - name: Dispatch model-updated to Workflow A
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: model-updated
+          client-payload: '{"triggered_by": "drift_detection"}'

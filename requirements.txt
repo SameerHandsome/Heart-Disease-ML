@@ -1,0 +1,33 @@
+# API
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+pydantic==2.7.1
+pydantic-settings==2.3.0
+python-dotenv==1.0.1
+
+# ML - only needed for loading the saved pipeline locally
+scikit-learn==1.5.0
+xgboost==2.0.3
+catboost==1.2.5
+lightgbm==4.3.0
+joblib==1.4.2
+numpy==1.26.4
+pandas==2.2.2
+
+# Database (async)
+asyncpg==0.29.0
+sqlalchemy[asyncio]==2.0.30
+
+# Cache / Rate limit
+upstash-redis==1.1.0
+
+# Model registry - downloads model from HuggingFace on startup
+huggingface-hub==0.23.2
+
+# Drift detection
+scipy==1.13.1
+
+# Testing
+pytest==8.2.2
+pytest-asyncio==0.23.7
+pytest-cov==5.0.0
