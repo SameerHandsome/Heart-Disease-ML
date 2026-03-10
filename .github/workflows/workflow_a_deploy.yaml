@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   repository_dispatch:
-    types: [model-updated]   # fired by Workflow B after Kaggle retrain completes
+    types: [model-updated] # fired by Workflow B after Kaggle retrain completes
+  workflow_dispatch:
 
 jobs:
 
