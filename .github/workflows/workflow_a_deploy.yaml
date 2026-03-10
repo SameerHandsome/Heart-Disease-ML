@@ -3,10 +3,8 @@ name: "Workflow A — Deploy"
 on:
   push:
     branches: [main]
-
   repository_dispatch:
     types: [model-updated]
-
   workflow_dispatch:
 
 jobs:
@@ -15,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code_changed: ${{ steps.filter.outputs.code }}
-
     steps:
       - uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 2
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -33,48 +31,38 @@ jobs:
 
   test:
     needs: detect-changes
-
     if: |
       needs.detect-changes.outputs.code_changed == 'true' ||
       github.event_name == 'repository_dispatch' ||
       github.event_name == 'workflow_dispatch'
-
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-
       - run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov
-
       - name: Run tests
         run: pytest tests/ -v --cov=ml --cov=monitor --cov-fail-under=40
         env:
-          DATABASE_URL: "postgresql://t:t@localhost/t"
-          UPSTASH_REDIS_URL: "https://fake.upstash.io"
+          DATABASE_URL:        "postgresql://t:t@localhost/t"
+          UPSTASH_REDIS_URL:   "https://fake.upstash.io"
           UPSTASH_REDIS_TOKEN: "fake"
-          HF_TOKEN: "fake"
-          HF_REPO_ID: "fake/fake"
-          WANDB_API_KEY: "fake"
+          HF_TOKEN:            "fake"
+          HF_REPO_ID:          "fake/fake"
+          WANDB_API_KEY:       "fake"
 
   build:
     needs: test
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
       packages: write
-
     steps:
       - uses: actions/checkout@v4
 
-      # Convert owner to lowercase — ghcr.io requires lowercase image names
       - name: Set lowercase image name
-        id: image
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "IMAGE_TAG=ghcr.io/${OWNER}/heart-disease-api" >> $GITHUB_ENV
@@ -95,12 +83,11 @@ jobs:
             ${{ env.IMAGE_TAG }}:${{ github.sha }}
             ${{ env.IMAGE_TAG }}:latest
           cache-from: type=registry,ref=${{ env.IMAGE_TAG }}:buildcache
-          cache-to: type=registry,ref=${{ env.IMAGE_TAG }}:buildcache,mode=max
+          cache-to:   type=registry,ref=${{ env.IMAGE_TAG }}:buildcache,mode=max
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -111,7 +98,7 @@ jobs:
 
       - name: Skip if no cluster configured
         run: |
-          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
+          if [ -z "$KUBECONFIG_SECRET" ]; then
             echo "========================================"
             echo "No KUBECONFIG secret found."
             echo "Skipping deployment — no cluster yet."
@@ -120,22 +107,25 @@ jobs:
             echo "========================================"
             exit 0
           fi
+          echo "CLUSTER_READY=true" >> $GITHUB_ENV
+        env:
+          KUBECONFIG_SECRET: ${{ secrets.KUBECONFIG }}
 
       - uses: azure/setup-kubectl@v3
+        if: env.CLUSTER_READY == 'true'
 
       - name: Configure kubectl
-        if: ${{ secrets.KUBECONFIG != '' }}
+        if: env.CLUSTER_READY == 'true'
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
 
       - name: Rolling update
-        if: ${{ secrets.KUBECONFIG != '' }}
+        if: env.CLUSTER_READY == 'true'
         run: |
           kubectl set image deployment/heart-disease-api \
             heart-disease-api=${{ env.IMAGE_TAG }}:${{ github.sha }}
 
       - name: Wait for rollout
-        if: ${{ secrets.KUBECONFIG != '' }}
-        run: |
-          kubectl rollout status deployment/heart-disease-api --timeout=300s
+        if: env.CLUSTER_READY == 'true'
+        run: kubectl rollout status deployment/heart-disease-api --timeout=300s
