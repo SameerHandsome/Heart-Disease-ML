@@ -32,6 +32,8 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+
+      # Full requirements needed — ml/train.py imports from app.config
       - run: pip install -r requirements.txt
 
       - name: Run drift monitor
@@ -45,17 +47,22 @@ jobs:
           WANDB_API_KEY:       ${{ secrets.WANDB_API_KEY }}
         run: |
           if [ "${{ github.event.inputs.force_retrain }}" = "true" ]; then
+            echo "Force retrain requested — skipping drift check"
             echo "should_retrain=true" >> $GITHUB_OUTPUT
             exit 0
           fi
+
           BATCH="${{ github.event.inputs.batch_size || '200' }}"
           set +e
           python monitor/drift_monitor.py "$BATCH"
           CODE=$?
           set -e
+
           if [ "$CODE" -eq 2 ]; then
+            echo "Drift confirmed — both gates fired"
             echo "should_retrain=true"  >> $GITHUB_OUTPUT
           else
+            echo "No drift detected"
             echo "should_retrain=false" >> $GITHUB_OUTPUT
           fi
 
@@ -69,7 +76,9 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install kaggle
+
+      # Full requirements + kaggle package
+      - run: pip install -r requirements.txt kaggle
 
       - name: Trigger Kaggle notebook retrain
         env:
@@ -82,9 +91,6 @@ jobs:
           HF_REPO_ID:          ${{ secrets.HF_REPO_ID }}
           WANDB_API_KEY:       ${{ secrets.WANDB_API_KEY }}
         run: python ml/train.py
-        # ml/train.py triggers your Kaggle notebook via Kaggle API
-        # The notebook trains and uploads to HuggingFace automatically
-        # After upload, the notebook dispatches the model-updated event below
 
       - name: Dispatch model-updated to Workflow A
         uses: peter-evans/repository-dispatch@v3
