@@ -27,44 +27,21 @@ settings = get_settings()
 
 
 def trigger_kaggle_retrain() -> bool:
-    """
-    Trigger your Kaggle notebook via the Kaggle API.
-
-    Setup steps (one time):
-      1. pip install kaggle
-      2. Download kaggle.json from kaggle.com/your-account → API
-      3. Place at C:/Users/YOU/.kaggle/kaggle.json  (Windows)
-         or ~/.kaggle/kaggle.json                   (Linux/Mac)
-      4. Set KAGGLE_USERNAME and KAGGLE_KEY in your .env
-
-    Your Kaggle notebook must:
-      - Be named: heart-disease-retrain  (or update kernel_slug below)
-      - Have "Internet on" enabled in notebook settings
-      - Have HF_TOKEN and WANDB_API_KEY added to Kaggle Secrets
-    """
     try:
         import kaggle
         kaggle.api.authenticate()
-
-        # Push a new run of your training notebook
-        kaggle.api.kernels_push_cli(
-            folder="kaggle",              # local kaggle/ folder with kernel-metadata.json
-        )
+        kaggle.api.kernels_push(folder="kaggle")
         print("✅  Kaggle retrain triggered successfully")
-        print("    Monitor at: https://www.kaggle.com/code/YOUR_USERNAME/heart-disease-retrain")
-        print("    Once done, model will auto-upload to HuggingFace")
-        print("    Workflow A will then redeploy automatically via repository_dispatch")
+        print("    Monitor at: https://www.kaggle.com/code/SameerHandsome1234/heart-disease-retrain")
         return True
-
     except ImportError:
-        print("⚠️  kaggle package not installed. Run: pip install kaggle")
+        print("⚠️  kaggle package not installed.")
         _print_manual_instructions()
         return False
     except Exception as exc:
         print(f"⚠️  Kaggle API trigger failed: {exc}")
         _print_manual_instructions()
         return False
-
 
 def _print_manual_instructions():
     print("\n" + "="*60)
